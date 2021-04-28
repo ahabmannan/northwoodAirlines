@@ -80,6 +80,8 @@ selectedDelays.write
 
 DESC Cancellation
 
+
+
 //delay reasons by airport
 // //delay reasons by airport
  val delayReasons = combinedDf.select("AIRPORT", "AIR_SYSTEM_DELAY" ,"SECURITY_DELAY" ,"AIRLINE_DELAY" ,"LATE_AIRCRAFT_DELAY" ,"WEATHER_DELAY", "AIRPORT")
@@ -92,5 +94,19 @@ selectedDelays.write
   .option("dbtable", "delayReasons")
   .mode(SaveMode.Overwrite)
   .save()
+
+//Percentage of on time
+flights.createOrReplaceTempView("ontime_percentage")
+
+var percentage = "SELECT airline,ROUND((COUNT(airline)*100/(SELECT COUNT(*) FROM ontime_percentage)),2) as percentage_ontime FROM ontime_percentage WHERE year = '2015' and  ARRIVAL_DELAY = '0' GROUP BY airline "
+spark.sql(percentage)
+
+selectedDelays.write
+  .format("snowflake")
+  .options(sfoptions)
+  .option("dbtable", "ontime_percentage")
+  .mode(SaveMode.Overwrite)
+  .save()
+
 
 
