@@ -3,7 +3,7 @@ import net.snowflake.spark.snowflake.Utils
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.SaveMode
 
-// Use secrets DBUtil to get Snowflake credentials.
+// Creating snowflake connection to test
 val user = dbutils.secrets.get("snowflake_keys", "snowflake_username")
 val password = dbutils.secrets.get("snowflake_keys", "snowflake_password")
 
@@ -15,73 +15,82 @@ val sfoptions = Map(
   "sfSchema" -> "PUBLIC",
   "sfWarehouse" -> "COMPUTE_WH"
 )
-val df1 = spark.read.format("csv").load("dbfs:/FileStore/shared_uploads/abdulmannanahmed897@gmail.com/partition_01.csv")
+
+//Creating dataframes from csv's
+val flights = spark.read.option("header", "true").format("csv").load("dbfs:/FileStore/shared_uploads/abdulmannanahmed897@gmail.com/")
+
+flights.show(false)
+
 val airline = spark.read.option("header", "true").format("csv").load("/FileStore/tables/airlines.csv")
-airline.show()
+airline.show(false)
+ 
+//val df1 = spark.read.format("csv").load("dbfs:/FileStore/shared_uploads/airports.csv")
+val airport = spark.read.option("header", "true").format("csv").load("dbfs:/FileStore/shared_uploads/airports.csv")
+airport.show(false)
 
-// Function to write table to snowflake
+ val combinedDf = flights.join(airport)
+combinedDf.printSchema
 
-airline.write
+//total number of flightsval count = combinedDf.groupBy("AIRLINE", "AIRPORT", "MONTH").count().orderBy("MONTH")
+
+val total_number_of_flights = count.withColumnRenamed("count", "total_number_of_flights")
+
+total_number_of_flights.createOrReplaceTempView("totalNumberofFlights")
+
+total_number_of_flights.write
   .format("snowflake")
   .options(sfoptions)
-  .option("dbtable", "AIRTRAFFIC")
+  .option("dbtable", "Total_number_of_flights")
   .mode(SaveMode.Overwrite)
   .save()
 
-val select = airline.select("AIRLINE")
+%sql
 
-select.write
-  .format("snowflake")
-  .options(sfoptions)
-  .option("dbtable", "NO_OF_AIRPORTS")
-  .mode(SaveMode.Overwrite)
-  .save()
+DESC totalNumberofFlights
 
-val df: DataFrame = spark.read
-  .format("snowflake") // or just use "snowflake"
-  .options(options)
-  .option("dbtable", "AIRPORT")
-  .load()
-
-df.show(false)
-
-val select = df.select("IATA_CODE", "AIRPORT")
-select.show(false)
-
-airlinesdf.write
-  .format("snowflake")
-  .options("dbtable", "AIRLINES")
-  .mode(SaveMode.Overwrite)
-  .save()
-
-airportsdf.write
-  .format("snowflake")
-  .options("dbtable", "AIRPORTS")
-  .mode(SaveMode.Overwrite)
-  .save()
-
-val airport = spark.read.option("header", "true").format("csv").load("/FileStore/tables/airlines.csv")
-
-println(airport.count)
-
-val renameCol = airline.withColumnRenamed("AIRLINE", "AIRLINE1")
-val aa = airport.join(renameCol)
-val flights = spark.read.option("header", "true").format("csv").load("dbfs:/FileStore/shared_uploads/")
-val combinedDf = flights.join(aa)
-
-//total number of flights
-val count = combinedDf.groupBy("AIRLINE1", "AIRPORT", "MONTH").count().orderBy("MONTH")
-
-//rename count 
 //Airlines with the largest number of delays
-val delays = combinedDf.groupBy("AIRLINE")
-val selectedDelays = delays.agg(sum($"AIR_SYSTEM_DELAY" + $"SECURITY_DELAY" + $"AIRLINE_DELAY" + $"LATE_AIRCRAFT_DELAY" + $"WEATHER_DELAY").cast("String").as("total")).orderBy($"total".desc)
+ val delays = combinedDf.groupBy("AIRLINE")
+ val selectedDelays = delays.agg(sum($"AIR_SYSTEM_DELAY" + $"SECURITY_DELAY" + $"AIRLINE_DELAY" + $"LATE_AIRCRAFT_DELAY" + $"WEATHER_DELAY").cast("String").as("total")).orderBy($"total".desc)
 
+selectedDelays.createOrReplaceTempView("Delays")
+
+selectedDelays.write
+  .format("snowflake")
+  .options(sfoptions)
+  .option("dbtable", "Delays")
+  .mode(SaveMode.Overwrite)
+  .save()
+
+%sql
+
+DESC Delays
 //cancellation reason according to airport"
-val cancellation = combinedDf.select("AIRPORT", "CANCELLATION_REASON")
+ val cancellation = combinedDf.select("AIRPORT", "CANCELLATION_REASON")
+
+cancellation.createOrReplaceTempView("Cancellation")
+
+selectedDelays.write
+  .format("snowflake")
+  .options(sfoptions)
+  .option("dbtable", "Cancellation")
+  .mode(SaveMode.Overwrite)
+  .save()
+
+%sql
+
+DESC Cancellation
 
 //delay reasons by airport
-val delayReasons = combinedDf.select("AIRPORT", "AIR_SYSTEM_DELAY" ,"SECURITY_DELAY" ,"AIRLINE_DELAY" ,"LATE_AIRCRAFT_DELAY" ,"WEATHER_DELAY", "AIRPORT").show(100000, false)
+// //delay reasons by airport
+ val delayReasons = combinedDf.select("AIRPORT", "AIR_SYSTEM_DELAY" ,"SECURITY_DELAY" ,"AIRLINE_DELAY" ,"LATE_AIRCRAFT_DELAY" ,"WEATHER_DELAY", "AIRPORT")
 
+delayReasons.createOrReplaceTempView("delayReasons")
+
+selectedDelays.write
+  .format("snowflake")
+  .options(sfoptions)
+  .option("dbtable", "delayReasons")
+  .mode(SaveMode.Overwrite)
+  .save()
 
 
